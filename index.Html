@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Admin Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #eef1f5; margin: 0; padding: 20px; }
+        
+        .container { 
+            max-width: 500px; margin: 0 auto; background: #fff; 
+            padding: 30px; border-radius: 15px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1); 
+        }
+
+        h2 { text-align: center; color: #333; margin-bottom: 25px; }
+        
+        .section-label { 
+            font-size: 14px; font-weight: bold; color: #555; 
+            background: #f8f9fa; padding: 8px; margin-top: 20px; 
+            border-left: 4px solid #d4af37; 
+        }
+
+        label { display: block; margin: 10px 0 5px; font-size: 13px; color: #666; font-weight: 600; }
+        
+        input, textarea, button { 
+            width: 100%; padding: 12px; border: 1px solid #ddd; 
+            border-radius: 8px; box-sizing: border-box; 
+        }
+        
+        button { 
+            background: #d4af37; color: white; border: none; 
+            font-weight: bold; cursor: pointer; margin-top: 15px; 
+        }
+        button:hover { background: #b5952f; }
+
+        .hidden { display: none !important; }
+        
+        .preview-circle { 
+            width: 100px; height: 100px; border-radius: 50%; 
+            object-fit: cover; border: 3px solid #d4af37; 
+            display: block; margin: 0 auto 10px; 
+        }
+
+        /* Cropper Modal */
+        #cropperModal { 
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0; 
+            background: rgba(0,0,0,0.9); z-index: 999; 
+            display: flex; flex-direction: column; padding: 20px; 
+        }
+        .crop-area { flex: 1; overflow: hidden; display: flex; justify-content: center; }
+        .crop-controls { display: flex; gap: 10px; margin-top: 10px; }
+        .btn-cancel { background: #555; }
+        img { max-width: 100%; }
+    </style>
+</head>
+<body>
+
+    <div class="container" id="loginBox">
+        <h2>Admin Login</h2>
+        <input type="password" id="passInput" placeholder="Password (Default: 123456)">
+        <button onclick="doLogin()">Login</button>
+    </div>
+
+    <div class="container hidden" id="adminBox">
+        <h2>Edit Profile</h2>
+        
+        <img src="" id="imgPreview" class="preview-circle">
+        <label>Upload & Crop Photo</label>
+        <input type="file" id="fileIn" accept="image/*">
+
+        <div class="section-label">Personal Info</div>
+        <input type="text" id="name" placeholder="Full Name">
+        <input type="text" id="title" placeholder="Designation (e.g. CEO)">
+        <input type="text" id="phone" placeholder="Phone (+880...)">
+        <input type="text" id="whatsapp" placeholder="WhatsApp (880...)">
+        <input type="text" id="email" placeholder="Email">
+        <textarea id="address" rows="2" placeholder="Address"></textarea>
+
+        <div class="section-label">Social Links (Optional)</div>
+        <input type="text" id="fb" placeholder="Facebook Link">
+        <input type="text" id="tt" placeholder="TikTok Link">
+        <input type="text" id="yt" placeholder="YouTube Link">
+        <input type="text" id="in" placeholder="LinkedIn Link">
+
+        <div class="section-label">Popup Settings</div>
+        <textarea id="msg" rows="2" placeholder="Message for missing links"></textarea>
+
+        <button onclick="saveData()">UPDATE CARD</button>
+
+        <div style="margin-top: 30px; border-top: 1px solid #ddd; padding-top: 10px;">
+            <label>New Password</label>
+            <input type="text" id="newPass" placeholder="Set New Password">
+            <button onclick="changePass()" style="background: #333;">Change Password</button>
+        </div>
+    </div>
+
+    <div id="cropperModal" class="hidden">
+        <div class="crop-area">
+            <img id="cropImg">
+        </div>
+        <div class="crop-controls">
+            <button class="btn-cancel" onclick="closeCrop()">Cancel</button>
+            <button onclick="cropSave()">Crop & Save</button>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getDatabase, ref, set, get, child } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDpWo30HwwnoMlm5qrOYVg-PtLnpHZacAM",
+            authDomain: "mulk-fashion-vai.firebaseapp.com",
+            projectId: "mulk-fashion-vai",
+            storageBucket: "mulk-fashion-vai.firebasestorage.app",
+            messagingSenderId: "734854805452",
+            appId: "1:734854805452:web:46d34874986510591c0f69",
+            measurementId: "G-84G3MRLG4S"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        
+        let cropper, finalImg = "";
+
+        // Login Logic
+        window.doLogin = function() {
+            const p = document.getElementById('passInput').value;
+            get(child(ref(db), 'digitalCard/admin/password')).then((snap) => {
+                const real = snap.exists() ? snap.val() : "123456";
+                if(p === real) {
+                    document.getElementById('loginBox').classList.add('hidden');
+                    document.getElementById('adminBox').classList.remove('hidden');
+                    loadInfo();
+                } else alert("Wrong Password");
+            });
+        };
+
+        // Load Data
+        function loadInfo() {
+            get(child(ref(db), 'digitalCard/info')).then((snap) => {
+                if(snap.exists()) {
+                    const d = snap.val();
+                    document.getElementById('name').value = d.name || "";
+                    document.getElementById('title').value = d.title || "";
+                    document.getElementById('phone').value = d.phone || "";
+                    document.getElementById('whatsapp').value = d.whatsapp || "";
+                    document.getElementById('email').value = d.email || "";
+                    document.getElementById('address').value = d.address || "";
+                    document.getElementById('fb').value = d.fbLink || "";
+                    document.getElementById('tt').value = d.tiktokLink || "";
+                    document.getElementById('yt').value = d.ytLink || "";
+                    document.getElementById('in').value = d.inLink || "";
+                    document.getElementById('msg').value = d.customMsg || "";
+                    if(d.image) {
+                        document.getElementById('imgPreview').src = d.image;
+                        finalImg = d.image;
+                    }
+                }
+            });
+        }
+
+        // Cropper Logic
+        document.getElementById('fileIn').addEventListener('change', (e) => {
+            const f = e.target.files[0];
+            if(f) {
+                const r = new FileReader();
+                r.onload = (ev) => {
+                    document.getElementById('cropImg').src = ev.target.result;
+                    document.getElementById('cropperModal').classList.remove('hidden');
+                    if(cropper) cropper.destroy();
+                    cropper = new Cropper(document.getElementById('cropImg'), { aspectRatio: 1, viewMode: 1 });
+                };
+                r.readAsDataURL(f);
+            }
+        });
+
+        window.cropSave = function() {
+            if(cropper) {
+                finalImg = cropper.getCroppedCanvas({width:300, height:300}).toDataURL('image/jpeg', 0.8);
+                document.getElementById('imgPreview').src = finalImg;
+                closeCrop();
+            }
+        };
+
+        window.closeCrop = function() {
+            document.getElementById('cropperModal').classList.add('hidden');
+            if(cropper) cropper.destroy();
+            document.getElementById('fileIn').value = "";
+        };
+
+        // Save Data
+        window.saveData = function() {
+            set(ref(db, 'digitalCard/info'), {
+                name: document.getElementById('name').value,
+                title: document.getElementById('title').value,
+                phone: document.getElementById('phone').value,
+                whatsapp: document.getElementById('whatsapp').value,
+                email: document.getElementById('email').value,
+                address: document.getElementById('address').value,
+                fbLink: document.getElementById('fb').value,
+                tiktokLink: document.getElementById('tt').value,
+                ytLink: document.getElementById('yt').value,
+                inLink: document.getElementById('in').value,
+                customMsg: document.getElementById('msg').value,
+                image: finalImg
+            }).then(() => alert("Saved Successfully!"));
+        };
+
+        window.changePass = function() {
+            const p = document.getElementById('newPass').value;
+            if(p.length > 3) set(ref(db, 'digitalCard/admin/password'), p).then(() => alert("Password Updated!"));
+        };
+    </script>
+</body>
+</html>
